@@ -283,6 +283,20 @@
   .zoom-tag{position:absolute;right:8px;bottom:8px;background:rgba(10,10,14,.62);color:#fff;font-size:11.5px;
     font-weight:600;padding:3px 9px;border-radius:999px;pointer-events:none}
 
+  /* ---------- backend status + real result ---------- */
+  .api-bar{display:flex;gap:8px;align-items:flex-start;margin-top:12px;background:var(--surface2);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.55;color:var(--ink2)}
+  .api-bar .dot2{width:9px;height:9px;border-radius:50%;background:var(--ink3);margin-top:6px;flex:none}
+  .api-bar.ok .dot2{background:var(--teal)}
+  .api-bar.warn .dot2{background:var(--gold)}
+  .api-bar.bad .dot2{background:var(--accent)}
+  .api-bar b{color:var(--ink)}
+  .result-media{position:relative;border-radius:20px;overflow:hidden;background:#000}
+  .result-media video,.result-media img{width:100%;height:auto;display:block;max-height:70vh;object-fit:contain;background:#000}
+  .work-card .cover video{width:100%;height:100%;object-fit:cover}
+  .token-row{display:flex;gap:8px;flex-wrap:wrap}
+  .token-row input{flex:1;min-width:200px;min-height:46px;border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:0 12px;outline:0}
+  .token-row input:focus{border-color:var(--accent)}
+
   /* ---------- toast + bottom nav ---------- */
   .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);
     padding:11px 18px;border-radius:999px;font-weight:700;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:150;
@@ -331,6 +345,7 @@
         <div class="step"><b>3</b>等出图 / 出片，下载发圈</div>
       </div>
       <p class="hero-note">测试期：H5 积分与 Viggle 积分 1:1 等值，余额 100 积分（= Viggle 免费积分）· 照片 1 积分/张 · Mix 1 积分/秒 · Remake（planner）5 积分/秒</p>
+      <div class="api-bar" id="apiBar"><span class="dot2"></span><span id="apiBarText">后端：正在连接…</span></div>
     </div>
 
     <div class="toolbar">
@@ -400,6 +415,7 @@
           <p id="resultSub"></p>
         </div>
       </div>
+      <div class="result-media" id="resultMedia" style="display:none"></div>
       <div class="result-card" id="resultCard" role="button" tabindex="0" aria-label="点击查看大图预览">
         <canvas id="posterCanvas" width="720" height="960"></canvas>
         <span class="zoom-tag">点图看大图</span>
@@ -407,7 +423,7 @@
       <div class="result-actions">
         <button class="big-btn primary" id="dlPoster">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v11m0 0 4-4m-4 4-4-4"/><path d="M4 16.5V19a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-2.5"/></svg>
-          下载预览海报
+          <span id="dlPosterLbl">下载预览海报</span>
         </button>
         <button class="big-btn" id="againBtn">再做一个</button>
         <button class="big-btn" data-nav="works">去我的作品看</button>
@@ -433,6 +449,7 @@
       </div>
       <div class="right">测试余额 100 积分已到账（与 Viggle 账户等值）<br/>照片 1 积分/张 · Mix 1 积分/秒 · Remake 5 积分/秒</div>
     </div>
+    <p class="fineprint" style="margin-top:10px">余额以后端为准（生成扣费、失败退款都在后端记账）。本次打开的设备号：<span id="deviceIdTxt">—</span> <button class="link-btn" id="refreshBal" type="button">刷新余额</button></p>
 
     <div class="sec-head"><h2>买积分包</h2><span>测试期按 Viggle 成本价：1 积分 = $0.01 ≈ ¥0.07</span></div>
     <div class="packs" id="packs"></div>
@@ -446,12 +463,19 @@
       <div class="price-row"><span class="d">视频 · Remake 模板（normal 档，按秒计）</span><span class="v">1 积分 / 秒 · 10 秒 = 10 积分 ≈ ¥0.67</span></div>
       <div class="price-row"><span class="d">生成失败</span><span class="v">自动退回积分</span></div>
     </div>
-    <p class="fineprint">MVP 演示版：点「立即购买」直接模拟到账，不产生真实扣款。正式版接微信支付（需商户号）后按此价格执行。</p>
+    <p class="fineprint">积分包价格先按 Viggle 成本价摆着对照成本。支付还没接通：后端已连接时余额以后端为准，买包不会假到账；正式版接微信支付（需商户号）后按此价格执行。</p>
   </section>
 
   <!-- ================= ADMIN ================= -->
   <section class="view" id="view-admin">
     <div class="sec-head"><h2>管理端 · 模板后台</h2><span>你上新，朋友端立刻能看到</span></div>
+    <div class="panel" style="margin-bottom:16px">
+      <h3>后端同步</h3>
+      <p class="sub" id="adminApiNote">填了管理口令，上下线、删除、上新会同步到后端服务器，朋友端刷新就能看到；不填口令时只在本次打开里有效，刷新就没了。口令只在这次打开里用，不保存。</p>
+      <div class="token-row">
+        <input type="password" id="adminToken" placeholder="管理口令 ADMIN_TOKEN（在服务器 /etc/huanrenxiu.env 里）" autocomplete="off" />
+      </div>
+    </div>
     <div class="stats">
       <div class="stat"><div class="n" id="statTpl">6</div><div class="l">在架模板</div></div>
       <div class="stat"><div class="n" id="statGen">0</div><div class="l">本次生成</div></div>
@@ -637,12 +661,115 @@
       desc:"把你家猫（或你自己）换成全场最萌的庆祝担当。也可以传宠物照片试试。" }
   ];
   function isPhoto(t){ return t.kind === "photo"; }
+  /* Backend template ids (server seed ids). Local covers/videos stay in this
+     page; the backend owns price, on/off state, credits and generation. */
+  var API_ID = { t1:"beier", t2:"dasheng", t4:"daxia", t3:"rewu", t5:"hongtan", t6:"mengmao",
+                 p1:"gta", p2:"shizi", p3:"wuseng", p4:"haitan" };
+  var LOCAL_ID = {};
+  Object.keys(API_ID).forEach(function(k){ LOCAL_ID[API_ID[k]] = k; });
+  templates.forEach(function(t){ t.apiId = API_ID[t.id] || null; });
   var CATS = ["全部","热门","体育","搞笑","舞蹈","古风","时尚","萌宠","写真","创意","海滩"];
   var PACKS = [
     { credits:100,  price:7,   name:"测试包", best:false },
     { credits:500,  price:35,  name:"跑量包", best:true },
     { credits:2000, price:140, name:"囤货包", best:false }
   ];
+
+  /* ---------------- backend ---------------- */
+  /* Cloudflare quick-tunnel address of the Tokyo backend. It changes if the
+     tunnel restarts; when it does, update this one line and rebuild. */
+  var API_BASE = "https://bishop-ourselves-subsection-construct.trycloudflare.com";
+  function makeDeviceId(){
+    var s = "";
+    try{
+      var a = new Uint8Array(12);
+      (window.crypto || {}).getRandomValues ? crypto.getRandomValues(a) : a.forEach(function(_, i){ a[i] = Math.floor(Math.random() * 256); });
+      a.forEach(function(b){ s += ("0" + b.toString(16)).slice(-2); });
+    }catch(e){ s = String(Date.now()) + Math.floor(Math.random() * 1e6); }
+    return "dev-" + s;
+  }
+  var deviceId = makeDeviceId();
+  var backend = { checked:false, online:false, hasKey:false };
+  function apiFetch(path, opts){
+    opts = opts || {};
+    var ctrl = ("AbortController" in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function(){ ctrl.abort(); }, opts.timeout || 20000) : null;
+    var headers = {};
+    if(opts.body && typeof opts.body === "string") headers["Content-Type"] = "application/json";
+    if(opts.admin) headers["Authorization"] = "Bearer " + opts.admin;
+    return fetch(API_BASE + path, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body || undefined,
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function(res){
+      if(timer) clearTimeout(timer);
+      return res.json().catch(function(){ return null; }).then(function(json){
+        if(json && json.ok) return json.data;
+        var err = (json && json.error) || {};
+        var e = new Error(err.message || ("后端返回 " + res.status));
+        e.code = err.code || ("http_" + res.status);
+        e.status = res.status;
+        throw e;
+      });
+    }).catch(function(e){
+      if(timer) clearTimeout(timer);
+      if(e && e.code) throw e;
+      var ne = new Error("连不上后端服务器");
+      ne.code = "network_error";
+      throw ne;
+    });
+  }
+  function renderApiBar(){
+    var bar = $("#apiBar"), txt = $("#apiBarText");
+    if(!bar) return;
+    bar.classList.remove("ok","warn","bad");
+    if(!backend.checked){ txt.textContent = "后端：正在连接…"; return; }
+    if(!backend.online){
+      bar.classList.add("bad");
+      txt.innerHTML = "<b>后端：暂时连不上。</b>先按演示流程看界面，不会真生成、不会扣 Viggle 积分。";
+      return;
+    }
+    if(!backend.hasKey){
+      bar.classList.add("warn");
+      txt.innerHTML = "<b>后端：已连接，就差放 Key。</b>Key 放进服务器后才能真生成；现在提交会提示「Key 未配置」，不扣费。";
+      return;
+    }
+    bar.classList.add("ok");
+    txt.innerHTML = "<b>后端：已连接，Key 已就绪。</b>提交后走真实生成，积分以后端记账为准，失败自动退回。";
+  }
+  function refreshCredits(silent){
+    return apiFetch("/api/credits/" + encodeURIComponent(deviceId)).then(function(d){
+      if(typeof d.balance === "number"){ state.credits = d.balance; syncCredits(); updateGenBtn(); }
+      return d.balance;
+    }).catch(function(e){
+      if(!silent) toast("刷新余额失败：" + e.message);
+      return null;
+    });
+  }
+  function initBackend(){
+    $("#deviceIdTxt").textContent = deviceId;
+    apiFetch("/api/health", { timeout: 10000 }).then(function(h){
+      backend.checked = true; backend.online = true; backend.hasKey = !!h.has_key;
+      renderApiBar();
+      return apiFetch("/api/templates", { timeout: 10000 }).catch(function(){ return null; });
+    }).then(function(td){
+      if(td && td.templates){
+        td.templates.forEach(function(bt){
+          var lid = LOCAL_ID[bt.id];
+          var t = templates.filter(function(x){ return x.id === lid; })[0];
+          if(!t) return;
+          if(typeof bt.price_credits === "number") t.cost = bt.price_credits;
+          t.online = !!bt.is_active;
+        });
+        renderGrid(); renderAdmin();
+      }
+      return refreshCredits(true);
+    }).catch(function(){
+      backend.checked = true; backend.online = false;
+      renderApiBar();
+    });
+  }
 
   /* ---------------- state (session only) ---------------- */
   var state = {
@@ -659,6 +786,10 @@
     pendingPack: null,
     genTimer: null,
     genTpl: null,
+    genMode: "demo",      // "demo" (offline fake flow) | "real" (backend job)
+    pollTimer: null,
+    jobId: null,
+    adminToken: "",
     newCover: COVERS.dance,
     newType: "Mix",
     newKind: "video"
@@ -700,7 +831,7 @@
       if(b.closest(".bottom-nav") || b.closest(".desk-nav")) b.classList.toggle("on", b.getAttribute("data-nav") === name);
     });
     window.scrollTo({ top:0 });
-    if(name === "works") renderWorks();
+    if(name === "works"){ renderWorks(); refreshWorksFromBackend(); }
     if(name === "admin") renderAdmin();
   }
   document.addEventListener("click", function(e){
@@ -909,7 +1040,13 @@
   ];
   var GEN_STEPS = GEN_STEPS_VIDEO;
   function startGeneration(t){
+    if(backend.online && t.apiId){ startRealGeneration(t); return; }
+    startDemoGeneration(t);
+  }
+  function startDemoGeneration(t){
+    state.genMode = "demo";
     state.genTpl = t;
+    $("#genCancel").textContent = "取消生成（退回积分）";
     var photo = isPhoto(t);
     GEN_STEPS = photo ? GEN_STEPS_PHOTO : GEN_STEPS_VIDEO;
     state.credits -= t.cost;
@@ -955,7 +1092,15 @@
   }
   $("#genCancel").addEventListener("click", function(){
     clearTimeout(state.genTimer);
+    clearTimeout(state.pollTimer);
     var t = state.genTpl;
+    if(state.genMode === "real"){
+      /* The backend job keeps running server-side; only stop waiting here. */
+      $("#genOverlay").classList.remove("show");
+      state.genTpl = null; state.jobId = null;
+      toast("已停止等待，任务还在后端生成，稍后去「我的作品」刷新看结果");
+      return;
+    }
     if(t){ state.credits += t.cost; state.spentTotal -= t.cost; }
     $("#genOverlay").classList.remove("show");
     syncCredits(); updateGenBtn();
@@ -963,9 +1108,134 @@
     state.genTpl = null;
   });
 
+  /* ---------------- real generation (backend) ---------------- */
+  function setGenProgress(pct, label){
+    $("#progBar").style.width = pct + "%";
+    $("#progPct").textContent = pct + "%";
+    $("#progStep").textContent = label;
+  }
+  function markStep(idx, cls){
+    var lis = $$("#gSteps li");
+    lis.forEach(function(li, i){
+      if(i < idx){ li.className = "done"; li.querySelector(".st").innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg>'; }
+      else if(i === idx){ li.className = cls; li.querySelector(".st").innerHTML = cls === "doing" ? '<span class="spin"></span>' : (i + 1); }
+    });
+  }
+  function startRealGeneration(t){
+    state.genMode = "real";
+    state.genTpl = t;
+    state.jobId = null;
+    var photo = isPhoto(t);
+    $("#genTitle").textContent = photo ? "正在按这个风格重绘你的照片" : "正在把你换进视频里";
+    $("#genTplName").textContent = "模板：" + t.title + " · 提交到后端真实生成中，失败自动退回 " + t.cost + " 积分";
+    $("#genCancel").textContent = "停止等待（任务继续在后端生成）";
+    $("#gSteps").innerHTML = ["把照片提交到后端", "后端调用 Viggle 生成（视频通常要几分钟）", "结果转存到服务器", "完成，去我的作品保存"]
+      .map(function(x, i){ return '<li><span class="st">' + (i + 1) + '</span>' + x + '</li>'; }).join("");
+    $("#genOverlay").classList.add("show");
+    markStep(0, "doing");
+    setGenProgress(6, "正在提交…");
+    apiFetch("/api/jobs", {
+      method: "POST", timeout: 60000,
+      body: JSON.stringify({ device_id: deviceId, template_id: t.apiId, image_data_url: state.photo.dataURL })
+    }).then(function(job){
+      state.jobId = job.id;
+      state.credits -= t.cost;
+      state.spentTotal += t.cost;
+      syncCredits(); updateGenBtn();
+      markStep(1, "doing");
+      setGenProgress(20, job.status === "processing" ? "生成中…" : "已排队，等待生成…");
+      pollJob(t, job.id, 0);
+    }).catch(function(e){
+      $("#genOverlay").classList.remove("show");
+      state.genTpl = null;
+      if(e.code === "key_not_configured"){
+        backend.hasKey = false; renderApiBar();
+        toast("后端还没放 Key，这次没生成、没扣费。放好 Key 再试");
+      } else if(e.code === "insufficient_credits"){
+        refreshCredits(true);
+        $("#poorText").textContent = "后端余额不够：这个模板要 " + t.cost + " 积分。生成失败会全额退回。";
+        $("#poorOverlay").classList.add("show");
+      } else if(e.code === "template_source_missing"){
+        toast("这个模板的原片还没传到服务器，暂时生成不了（没扣费）");
+      } else {
+        toast("提交失败：" + e.message + "（没扣费）");
+      }
+      refreshCredits(true);
+    });
+  }
+  function pollJob(t, jobId, tries){
+    clearTimeout(state.pollTimer);
+    state.pollTimer = setTimeout(function(){
+      apiFetch("/api/jobs/" + encodeURIComponent(jobId), { timeout: 30000 }).then(function(job){
+        if(state.jobId !== jobId) return; /* user stopped waiting */
+        if(job.status === "ready"){
+          finishRealGeneration(t, job);
+          return;
+        }
+        if(job.status === "failed" || job.status === "cancelled"){
+          $("#genOverlay").classList.remove("show");
+          state.genTpl = null; state.jobId = null;
+          refreshCredits(true);
+          toast("生成失败" + (job.error ? "：" + job.error : "") + "，积分已退回");
+          return;
+        }
+        markStep(1, "doing");
+        setGenProgress(Math.min(92, 20 + tries * 2), job.status === "processing" ? "生成中，别关页面…" : "排队中…");
+        if(tries > 160){ /* ~13 min of polling */
+          $("#genOverlay").classList.remove("show");
+          state.genTpl = null; state.jobId = null;
+          toast("等太久了，先去「我的作品」刷新看结果，任务还在后端跑");
+          showView("works");
+          return;
+        }
+        pollJob(t, jobId, tries + 1);
+      }).catch(function(){
+        if(state.jobId !== jobId) return;
+        if(tries > 160){
+          $("#genOverlay").classList.remove("show");
+          state.genTpl = null; state.jobId = null;
+          toast("暂时连不上后端，去「我的作品」刷新看结果");
+          return;
+        }
+        pollJob(t, jobId, tries + 1);
+      });
+    }, 5000);
+  }
+  function finishRealGeneration(t, job){
+    clearTimeout(state.pollTimer);
+    $("#genOverlay").classList.remove("show");
+    state.genCount++;
+    var resultUrl = job.result_url ? (API_BASE + job.result_url) : "";
+    var w = { tplId:t.id, title:t.title, kind:t.kind, cover:t.cover, photo:state.photo ? state.photo.dataURL : null,
+              poster:null, resultUrl:resultUrl, jobId:job.id, status:"ready", time:fmtTime(new Date()) };
+    state.works.unshift(w);
+    state.lastResult = { poster:null, title:t.title, kind:t.kind, resultUrl:resultUrl };
+    state.genTpl = null; state.jobId = null;
+    refreshCredits(true);
+    syncCredits();
+    var photo = isPhoto(t);
+    $("#resultSub").textContent = t.title + " · " + (photo ? "照片" : t.dur + " 秒视频") + " · 真实生成完成，已存入我的作品";
+    $("#resultFine").textContent = "这是后端真实生成的结果，文件存在服务器上（保留 30 天），请尽快保存到手机。发布到抖音/朋友圈时请保留「AI生成」标识。";
+    showRealResult(w);
+    $("#dlPosterLbl").textContent = photo ? "下载图片" : "下载视频";
+    showView("result");
+    toast("生成完成，已存入「我的作品」");
+  }
+  function showRealResult(w){
+    var media = $("#resultMedia"), card = $("#resultCard");
+    if(!w.resultUrl){ media.style.display = "none"; card.style.display = ""; return; }
+    card.style.display = "none";
+    media.style.display = "";
+    media.innerHTML = w.kind === "photo"
+      ? '<img src="' + w.resultUrl + '" alt="' + w.title + ' 生成结果" />'
+      : '<video src="' + w.resultUrl + '" poster="' + w.cover + '" controls playsinline preload="metadata"></video>';
+  }
+
   function finishGeneration(){
     var t = state.genTpl;
     $("#genOverlay").classList.remove("show");
+    $("#resultMedia").style.display = "none";
+    $("#resultCard").style.display = "";
     state.genCount++;
     drawPoster(t, function(posterURL){
       state.works.unshift({ tplId:t.id, title:t.title, kind:t.kind, cover:t.cover, photo:state.photo ? state.photo.dataURL : null, poster:posterURL, time:fmtTime(new Date()) });
@@ -978,7 +1248,7 @@
       $("#resultFine").textContent = photo
         ? "作品带「AI生成」标识，发布时请保留。当前为 MVP 演示流程：这里下载的是预览图，正式版接入 Viggle Image 后，同一入口直接下载无水印原图（1K）。"
         : "成片带「AI生成」标识，发布到抖音/朋友圈时请保留。当前为 MVP 演示流程：这里下载的是预览海报，正式版接入生成服务后，同一入口直接下载无水印 MP4 成片。";
-      $("#dlPoster").lastChild.textContent = " " + saveBtnLabel(photo ? "photo" : "video");
+      $("#dlPosterLbl").textContent = saveBtnLabel(photo ? "photo" : "video");
       showView("result");
       toast("生成完成，已存入「我的作品」");
     });
@@ -1138,6 +1408,10 @@
 
   $("#dlPoster").addEventListener("click", function(){
     var lr = state.lastResult;
+    if(lr && lr.resultUrl){
+      downloadResult({ resultUrl: lr.resultUrl, title: lr.title, kind: lr.kind });
+      return;
+    }
     var src = lr ? lr.poster : $("#posterCanvas").toDataURL("image/png");
     var kind = lr ? lr.kind : (state.current && isPhoto(state.current) ? "photo" : "video");
     saveImage(src, "换人秀-" + (lr ? lr.title : "预览图") + ".png", kind);
@@ -1167,17 +1441,27 @@
     state.works.forEach(function(w){
       var card = document.createElement("div");
       card.className = "work-card";
+      var done = !w.status || w.status === "ready";
+      var mediaHtml;
+      if(w.resultUrl && w.kind !== "photo"){
+        mediaHtml = '<video src="' + w.resultUrl + '" poster="' + w.cover + '" controls playsinline preload="metadata"></video>';
+      } else {
+        mediaHtml = '<img class="poster" src="' + (w.resultUrl || w.poster || w.cover) + '" alt="' + w.title + ' 生成作品" />';
+      }
       card.innerHTML =
-        '<div class="cover"><img class="poster" src="' + (w.poster || w.cover) + '" alt="' + w.title + ' 生成作品" />' +
-        '<span class="badge status-done">已完成</span><span class="zoom-tag">点图放大</span></div>' +
+        '<div class="cover">' + mediaHtml +
+        '<span class="badge status-done">' + (done ? "已完成" : (w.status === "failed" ? "已失败·已退款" : "生成中…")) + '</span>' + (w.resultUrl || w.kind !== "photo" ? '' : '<span class="zoom-tag">点图放大</span>') + '</div>' +
         '<div class="card-body"><p class="card-title">' + w.title + '</p>' +
         '<div class="card-meta"><span>' + w.time + '</span><span>' + (w.kind === "photo" ? "照片 · 无水印" : "视频 · 无水印") + '</span></div></div>' +
-        '<div class="work-actions"><button class="mini-btn primary">' + saveBtnLabel(w.kind) + '</button><button class="mini-btn">' + (w.kind === "photo" ? "再做一张" : "再做一条") + '</button></div>';
-      card.querySelector(".cover").addEventListener("click", function(){
-        openLightbox(w.poster || w.cover, w.kind, "换人秀-" + w.title + ".png", false);
-      });
+        '<div class="work-actions"><button class="mini-btn primary">' + (w.kind === "photo" ? saveBtnLabel(w.kind) : "下载视频") + '</button><button class="mini-btn">' + (w.kind === "photo" ? "再做一张" : "再做一条") + '</button></div>';
+      if(!w.resultUrl){
+        card.querySelector(".cover").addEventListener("click", function(){
+          openLightbox(w.poster || w.cover, w.kind, "换人秀-" + w.title + ".png", false);
+        });
+      }
       var btns = card.querySelectorAll(".mini-btn");
       btns[0].addEventListener("click", function(){
+        if(w.resultUrl){ downloadResult(w); return; }
         saveImage(w.poster, "换人秀-" + w.title + ".png", w.kind);
       });
       btns[1].addEventListener("click", function(){
@@ -1186,6 +1470,51 @@
       });
       grid.appendChild(card);
     });
+  }
+
+  /* Download a real backend result: fetch as blob so phones save the file
+     itself; if the fetch is blocked, fall back to opening the file. */
+  function downloadResult(w){
+    if(!w.resultUrl) return;
+    var isVideo = w.kind !== "photo";
+    var ext = isVideo ? ".mp4" : (w.resultUrl.split(".").pop() || "png").split("?")[0];
+    var fname = "换人秀-" + w.title + (isVideo ? ".mp4" : "." + ext);
+    toast("正在准备下载…");
+    fetch(w.resultUrl).then(function(r){
+      if(!r.ok) throw new Error("http " + r.status);
+      return r.blob();
+    }).then(function(blob){
+      downloadBlob(blob, fname);
+      toast(isVideo ? "视频已下载，去发朋友圈吧" : "图片已下载，去发朋友圈吧");
+    }).catch(function(){
+      toast("直接下载被拦了：点开作品里的播放器/图片，长按或用浏览器菜单保存");
+    });
+  }
+  /* Pull this device's jobs from the backend so finished work survives
+     leaving the generation screen (results live on the server 30 days). */
+  function refreshWorksFromBackend(){
+    if(!backend.online) return;
+    apiFetch("/api/jobs?device_id=" + encodeURIComponent(deviceId) + "&limit=30", { timeout: 12000 }).then(function(d){
+      if(!d || !d.jobs) return;
+      var changed = false;
+      d.jobs.forEach(function(j){
+        var exists = state.works.some(function(w){ return w.jobId === j.id; });
+        if(exists) return;
+        var lid = LOCAL_ID[j.template_id];
+        var t = templates.filter(function(x){ return x.id === lid; })[0];
+        state.works.push({
+          tplId: lid || j.template_id, title: t ? t.title : j.template_id,
+          kind: t ? t.kind : (j.type === "image" ? "photo" : "video"),
+          cover: t ? t.cover : "", photo: null, poster: null,
+          resultUrl: j.result_url ? (API_BASE + j.result_url) : "",
+          jobId: j.id, status: j.status,
+          time: j.created_at ? j.created_at.slice(5, 16).replace("T", " ") : ""
+        });
+        changed = true;
+      });
+      state.works.sort(function(a, b){ return (b.jobId ? 1 : 0) - (a.jobId ? 1 : 0); });
+      if(changed){ syncCredits(); if($("#view-works").classList.contains("on")) renderWorks(); }
+    }).catch(function(){});
   }
 
   /* ---------------- wallet ---------------- */
@@ -1212,14 +1541,26 @@
   $("#buyConfirm").addEventListener("click", function(){
     var p = state.pendingPack;
     if(!p) return;
+    $("#buyOverlay").classList.remove("show");
+    state.pendingPack = null;
+    if(backend.online){
+      /* Credits live on the backend now; there is no payment/top-up endpoint
+         yet, so never fake a top-up. Test with the backend's 100 credits. */
+      toast("支付还没接通，积分以后端为准。先用后端送的 100 积分测试，不够再找制作者加");
+      refreshCredits(true);
+      return;
+    }
     state.credits += p.credits;
     syncCredits(); updateGenBtn();
-    $("#buyOverlay").classList.remove("show");
     toast("购买成功，" + p.credits + " 积分已到账");
-    state.pendingPack = null;
   });
 
   /* ---------------- admin ---------------- */
+  $("#adminToken").addEventListener("input", function(){ state.adminToken = this.value.trim(); });
+  $("#refreshBal").addEventListener("click", function(){
+    if(!backend.online){ toast("后端还没连上，余额是本地演示数"); return; }
+    refreshCredits(false).then(function(b){ if(b !== null && b !== undefined) toast("后端余额：" + b + " 积分"); });
+  });
   var coverPick = $("#coverPick");
   Object.keys(COVERS).forEach(function(k){
     var b = document.createElement("button");
@@ -1291,7 +1632,24 @@
     $("#fTitle").value = "";
     $("#fPrompt").value = "";
     renderGrid(); renderAdmin(); syncCredits();
-    toast("已上架，朋友端模板墙立刻能看到");
+    if(backend.online && state.adminToken){
+      var slug = "u" + Date.now().toString(36);
+      var payload = photo
+        ? { id: slug, title: t.title, category: t.cat, type: "image", prompt: prompt, resolution: "1K" }
+        : { id: slug, title: t.title, category: t.cat, type: t.type === "Remake" ? "remake" : "mix",
+            duration_seconds: dur, enhance_mode: t.type === "Remake" ? "planner" : "",
+            source_path: "templates/" + slug + ".mp4" };
+      apiFetch("/api/templates", { method: "POST", admin: state.adminToken, timeout: 20000, body: JSON.stringify(payload) }).then(function(bt){
+        t.apiId = bt.id;
+        t.cost = bt.price_credits;
+        renderGrid(); renderAdmin();
+        toast(photo ? "已同步到后端上架" : "已同步到后端上架；原片传到服务器前，提交会提示原片缺失");
+      }).catch(function(e){
+        toast("本页已上架，但同步后端失败：" + e.message);
+      });
+    } else {
+      toast(backend.online ? "已上架（本页有效）。填了管理口令才会同步到后端" : "已上架（本页有效）。后端连上后填口令可同步");
+    }
   });
 
   function renderAdmin(){
@@ -1311,11 +1669,21 @@
         t.online = e.target.checked;
         renderGrid(); renderAdmin(); syncCredits();
         toast(t.online ? "已上线：" + t.title : "已下线：" + t.title);
+        if(backend.online && state.adminToken && t.apiId){
+          apiFetch("/api/templates/" + encodeURIComponent(t.apiId), { method: "PATCH", admin: state.adminToken, body: JSON.stringify({ is_active: t.online }) })
+            .then(function(){ toast("已同步到后端"); })
+            .catch(function(err){ toast("同步后端失败：" + err.message); });
+        }
       });
       row.querySelector(".del-btn").addEventListener("click", function(){
         templates = templates.filter(function(x){ return x.id !== t.id; });
         renderGrid(); renderAdmin(); syncCredits();
         toast("已删除：" + t.title);
+        if(backend.online && state.adminToken && t.apiId){
+          apiFetch("/api/templates/" + encodeURIComponent(t.apiId), { method: "DELETE", admin: state.adminToken })
+            .then(function(){ toast("已同步删除后端记录"); })
+            .catch(function(err){ toast("后端删除失败：" + err.message); });
+        }
       });
       list.appendChild(row);
     });
@@ -1325,6 +1693,8 @@
   renderGrid();
   renderAdmin();
   syncCredits();
+  renderApiBar();
+  initBackend();
 })();
 </script>
 </body>
