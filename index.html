@@ -615,7 +615,20 @@
     }catch(e){ s = String(Date.now()) + Math.floor(Math.random() * 1e6); }
     return "dev-" + s;
   }
-  var deviceId = makeDeviceId();
+  function loadDeviceId(){
+    var id = null;
+    try{
+      id = window.localStorage.getItem("hrx_device_id");
+    }catch(e){ id = null; }
+    if(!id){
+      id = makeDeviceId();
+      try{
+        window.localStorage.setItem("hrx_device_id", id);
+      }catch(e){ /* localStorage unavailable; keep in-memory id for this session */ }
+    }
+    return id;
+  }
+  var deviceId = loadDeviceId();
   var backend = { checked:false, online:false, hasKey:false };
   function apiFetch(path, opts){
     opts = opts || {};
