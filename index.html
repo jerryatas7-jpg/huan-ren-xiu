@@ -187,6 +187,10 @@
   .work-card .cover{aspect-ratio:3/4}
   .work-card .cover img.poster{width:100%;height:100%;object-fit:cover}
   .status-done{position:absolute;left:8px;top:8px;background:var(--teal);color:#fff}
+  .status-queue{position:absolute;left:8px;top:8px;background:var(--gold);color:#fff}
+  .work-prog{margin-top:2px}
+  .work-prog .prog{margin:10px 0 4px}
+  .work-prog .prog-lbl{font-size:12.5px}
   .work-actions{display:flex;gap:8px;padding:10px 12px 12px}
   .mini-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--surface2);
     border-radius:10px;font-weight:700;font-size:13.5px;min-height:40px;padding:0 8px}
@@ -731,6 +735,7 @@
     photo: null,          // {dataURL, name}
     pendingPack: null,
     genTimer: null,
+    worksTimer: null,     // 15s progress poller, only while the works view is open
     genTpl: null,
     genMode: "demo",      // "demo" (offline fake flow) | "real" (backend job)
     pollTimer: null,
@@ -772,7 +777,8 @@
       if(b.closest(".bottom-nav") || b.closest(".desk-nav")) b.classList.toggle("on", b.getAttribute("data-nav") === name);
     });
     window.scrollTo({ top:0 });
-    if(name === "works"){ renderWorks(); refreshWorksFromBackend(); }
+    if(name === "works"){ renderWorks(); syncWorksPolling(); refreshWorksFromBackend(); }
+    else stopWorksPolling();
   }
   document.addEventListener("click", function(e){
     var nav = e.target.closest("[data-nav]");
@@ -1173,7 +1179,7 @@
     state.genCount++;
     var resultUrl = job.result_url ? (API_BASE + job.result_url) : "";
     var w = { tplId:t.id, title:t.title, kind:t.kind, cover:t.cover, photo:state.photo ? state.photo.dataURL : null,
-              poster:null, resultUrl:resultUrl, jobId:job.id, status:"ready", time:fmtTime(new Date()) };
+              poster:null, resultUrl:resultUrl, jobId:job.id, status:"ready", createdTs:Date.now(), time:fmtTime(new Date()) };
     state.works.unshift(w);
     state.lastResult = { poster:null, title:t.title, kind:t.kind, resultUrl:resultUrl };
     state.genTpl = null; state.jobId = null;
@@ -1205,7 +1211,7 @@
     $("#resultCard").style.display = "";
     state.genCount++;
     drawPoster(t, function(posterURL){
-      state.works.unshift({ tplId:t.id, title:t.title, kind:t.kind, cover:t.cover, photo:state.photo ? state.photo.dataURL : null, poster:posterURL, time:fmtTime(new Date()) });
+      state.works.unshift({ tplId:t.id, title:t.title, kind:t.kind, cover:t.cover, photo:state.photo ? state.photo.dataURL : null, poster:posterURL, status:"ready", createdTs:Date.now(), time:fmtTime(new Date()) });
       state.lastResult = { poster:posterURL, title:t.title, kind:t.kind };
       syncCredits();
       var photo = isPhoto(t);
@@ -1398,6 +1404,111 @@
   });
 
   /* ---------------- works ---------------- */
+  /* The backend reports no real progress (only queued / processing /
+     ready / failed / cancelled), so the bar below is an ESTIMATE from
+     elapsed time vs. the typical duration of the job's tier, capped at
+     92% — it never pretends to be real progress and never hits 100%
+     before the job actually finishes. Typical durations (seconds):
+     photo 25 · Mix 180 · Remake normal 120 · Remake planner 600.
+     Templates carry no enhance_mode field, so the Remake tier is told
+     apart by price: cost ≈ dur×5 is planner, cost ≈ dur×1 is normal. */
+  var TYPICAL_SECONDS = { photo:25, mix:180, remakeNormal:120, remakePlanner:600 };
+  function typicalSecondsFor(w){
+    if(w.kind === "photo") return TYPICAL_SECONDS.photo;
+    var t = templates.filter(function(x){ return x.id === w.tplId; })[0];
+    if(t){
+      if(t.kind === "photo") return TYPICAL_SECONDS.photo;
+      if(t.type === "Mix") return TYPICAL_SECONDS.mix;
+      if(t.type === "Remake" && t.dur){
+        var dPlanner = Math.abs(t.cost - t.dur * 5);
+        var dNormal = Math.abs(t.cost - t.dur * 1);
+        return dPlanner <= dNormal ? TYPICAL_SECONDS.remakePlanner : TYPICAL_SECONDS.remakeNormal;
+      }
+    }
+    return TYPICAL_SECONDS.mix;
+  }
+  function workEstimate(w){
+    if(w.status === "queued"){
+      var qp = 20;
+      if(w.createdTs){
+        var qElapsed = Math.max(0, (Date.now() - w.createdTs) / 1000);
+        qp = Math.min(92, Math.max(4, Math.round(qElapsed / typicalSecondsFor(w) * 100)));
+      }
+      return { pct: qp, label: "排队中…" };
+    }
+    /* processing without a usable created_at: fixed 20%, no ETA */
+    if(!w.createdTs) return { pct: 20, label: "生成中…（预计）" };
+    var typ = typicalSecondsFor(w);
+    var elapsed = Math.max(0, (Date.now() - w.createdTs) / 1000);
+    var pct = Math.min(92, Math.max(2, Math.round(elapsed / typ * 100)));
+    var remain = typ - elapsed;
+    var label;
+    if(remain <= 0) label = "就快好了…（预计）";
+    else if(remain >= 60) label = "预计还剩约 " + Math.ceil(remain / 60) + " 分钟（预计）";
+    else label = "预计还剩约 " + Math.max(1, Math.ceil(remain)) + " 秒（预计）";
+    return { pct: pct, label: label };
+  }
+  function isPendingWork(w){ return w.status === "queued" || w.status === "processing"; }
+  function isFailedWork(w){ return w.status === "failed" || w.status === "cancelled"; }
+
+  function createWorkCard(w){
+    var card = document.createElement("div");
+    card.className = "work-card";
+    if(w.jobId) card.setAttribute("data-job-id", w.jobId);
+    var done = !w.status || w.status === "ready";
+    var failed = isFailedWork(w);
+    var pending = isPendingWork(w);
+    var mediaHtml;
+    if(w.resultUrl && w.kind !== "photo"){
+      mediaHtml = '<video src="' + w.resultUrl + '" poster="' + w.cover + '" controls playsinline preload="metadata"></video>';
+    } else {
+      mediaHtml = '<img class="poster" src="' + (w.resultUrl || w.poster || w.cover) + '" alt="' + w.title + ' 生成作品" />';
+    }
+    var badgeHtml = done
+      ? '<span class="badge status-done">已完成</span>'
+      : (failed
+          ? '<span class="badge status-done" style="background:var(--accent)">已失败·已退款</span>'
+          : (w.status === "queued"
+              ? '<span class="badge status-queue">排队中</span>'
+              : '<span class="badge status-done">生成中…</span>'));
+    var progHtml = "";
+    if(pending){
+      var est = workEstimate(w);
+      progHtml = '<div class="work-prog"><div class="prog"><i class="wp-bar" style="width:' + est.pct + '%"></i></div>' +
+        '<div class="prog-lbl"><span class="wp-txt">' + est.label + '</span><span class="wp-pct">' + est.pct + '%</span></div></div>';
+    }
+    var actionsHtml = "";
+    if(done){
+      actionsHtml = '<div class="work-actions"><button class="mini-btn primary">' + (w.kind === "photo" ? saveBtnLabel(w.kind) : "下载视频") + '</button><button class="mini-btn">' + (w.kind === "photo" ? "再做一张" : "再做一条") + '</button></div>';
+    } else if(failed){
+      actionsHtml = '<div class="work-actions"><button class="mini-btn">' + (w.kind === "photo" ? "再做一张" : "再做一条") + '</button></div>';
+    }
+    card.innerHTML =
+      '<div class="cover">' + mediaHtml + badgeHtml + (w.resultUrl || w.kind !== "photo" ? '' : '<span class="zoom-tag">点图放大</span>') + '</div>' +
+      '<div class="card-body"><p class="card-title">' + w.title + '</p>' +
+      '<div class="card-meta"><span>' + w.time + '</span><span>' + (w.kind === "photo" ? "照片 · 无水印" : "视频 · 无水印") + '</span></div>' + progHtml + '</div>' +
+      actionsHtml;
+    if(!w.resultUrl && done){
+      card.querySelector(".cover").addEventListener("click", function(){
+        openLightbox(w.poster || w.cover, w.kind, "换人秀-" + w.title + ".png", false);
+      });
+    }
+    var btns = card.querySelectorAll(".mini-btn");
+    if(done && btns.length >= 2){
+      btns[0].addEventListener("click", function(){
+        if(w.resultUrl){ downloadResult(w); return; }
+        saveImage(w.poster, "换人秀-" + w.title + ".png", w.kind);
+      });
+      btns[1].addEventListener("click", function(){ redoWork(w); });
+    } else if(failed && btns.length >= 1){
+      btns[0].addEventListener("click", function(){ redoWork(w); });
+    }
+    return card;
+  }
+  function redoWork(w){
+    var t = templates.filter(function(x){ return x.id === w.tplId; })[0];
+    if(t) openDetail(t); else showView("home");
+  }
   function renderWorks(){
     var grid = $("#worksGrid");
     grid.innerHTML = "";
@@ -1405,38 +1516,53 @@
       grid.innerHTML = '<div class="empty">还没有作品。<br/>去挑一个模板，传张照片，做第一张照片或第一条视频吧。</div>';
       return;
     }
+    state.works.forEach(function(w){ grid.appendChild(createWorkCard(w)); });
+  }
+  /* Swap ONE card in place when its job changes state, so videos the
+     user is watching in other cards are never reset. */
+  function updateWorkCard(w){
+    if(!w.jobId) return;
+    var grid = $("#worksGrid");
+    var old = grid.querySelector('[data-job-id="' + w.jobId + '"]');
+    if(old) grid.replaceChild(createWorkCard(w), old);
+  }
+  /* Tick every pending card's bar + ETA text in place (no re-render). */
+  function updatePendingProgress(){
     state.works.forEach(function(w){
-      var card = document.createElement("div");
-      card.className = "work-card";
-      var done = !w.status || w.status === "ready";
-      var mediaHtml;
-      if(w.resultUrl && w.kind !== "photo"){
-        mediaHtml = '<video src="' + w.resultUrl + '" poster="' + w.cover + '" controls playsinline preload="metadata"></video>';
-      } else {
-        mediaHtml = '<img class="poster" src="' + (w.resultUrl || w.poster || w.cover) + '" alt="' + w.title + ' 生成作品" />';
+      if(!isPendingWork(w) || !w.jobId) return;
+      var card = $("#worksGrid").querySelector('[data-job-id="' + w.jobId + '"]');
+      if(!card) return;
+      var est = workEstimate(w);
+      var bar = card.querySelector(".wp-bar");
+      if(bar) bar.style.width = est.pct + "%";
+      var txt = card.querySelector(".wp-txt");
+      if(txt) txt.textContent = est.label;
+      var pct = card.querySelector(".wp-pct");
+      if(pct) pct.textContent = est.pct + "%";
+      var badge = card.querySelector(".cover .badge");
+      if(badge && w.status === "queued"){ badge.textContent = "排队中"; badge.className = "badge status-queue"; }
+      if(badge && w.status === "processing" && badge.classList.contains("status-queue")){
+        badge.textContent = "生成中…"; badge.className = "badge status-done";
       }
-      card.innerHTML =
-        '<div class="cover">' + mediaHtml +
-        '<span class="badge status-done">' + (done ? "已完成" : (w.status === "failed" ? "已失败·已退款" : "生成中…")) + '</span>' + (w.resultUrl || w.kind !== "photo" ? '' : '<span class="zoom-tag">点图放大</span>') + '</div>' +
-        '<div class="card-body"><p class="card-title">' + w.title + '</p>' +
-        '<div class="card-meta"><span>' + w.time + '</span><span>' + (w.kind === "photo" ? "照片 · 无水印" : "视频 · 无水印") + '</span></div></div>' +
-        '<div class="work-actions"><button class="mini-btn primary">' + (w.kind === "photo" ? saveBtnLabel(w.kind) : "下载视频") + '</button><button class="mini-btn">' + (w.kind === "photo" ? "再做一张" : "再做一条") + '</button></div>';
-      if(!w.resultUrl){
-        card.querySelector(".cover").addEventListener("click", function(){
-          openLightbox(w.poster || w.cover, w.kind, "换人秀-" + w.title + ".png", false);
-        });
-      }
-      var btns = card.querySelectorAll(".mini-btn");
-      btns[0].addEventListener("click", function(){
-        if(w.resultUrl){ downloadResult(w); return; }
-        saveImage(w.poster, "换人秀-" + w.title + ".png", w.kind);
-      });
-      btns[1].addEventListener("click", function(){
-        var t = templates.filter(function(x){ return x.id === w.tplId; })[0];
-        if(t) openDetail(t); else showView("home");
-      });
-      grid.appendChild(card);
     });
+  }
+  function hasPendingWorks(){ return state.works.some(isPendingWork); }
+  function stopWorksPolling(){
+    if(state.worksTimer){ clearInterval(state.worksTimer); state.worksTimer = null; }
+  }
+  /* While the works view is open with jobs still running, re-pull the
+     job list every 15s and tick the bars; stop as soon as the user
+     leaves the view or nothing is pending anymore. */
+  function syncWorksPolling(){
+    var inWorks = $("#view-works").classList.contains("on");
+    if(inWorks && backend.online && hasPendingWorks()){
+      if(!state.worksTimer){
+        state.worksTimer = setInterval(function(){
+          updatePendingProgress();
+          refreshWorksFromBackend();
+        }, 15000);
+      }
+    } else stopWorksPolling();
   }
 
   /* Download a real backend result: fetch as blob so phones save the file
@@ -1463,10 +1589,25 @@
     if(!backend.online) return;
     apiFetch("/api/jobs?device_id=" + encodeURIComponent(deviceId) + "&limit=30", { timeout: 12000 }).then(function(d){
       if(!d || !d.jobs) return;
-      var changed = false;
+      var added = false;
+      var inWorks = $("#view-works").classList.contains("on");
       d.jobs.forEach(function(j){
-        var exists = state.works.some(function(w){ return w.jobId === j.id; });
-        if(exists) return;
+        var ts = j.created_at ? Date.parse(j.created_at) : NaN;
+        var createdTs = isNaN(ts) ? null : ts;
+        var w = state.works.filter(function(x){ return x.jobId === j.id; })[0];
+        if(w){
+          /* Existing job: keep its status and result URL current, so a
+             job the user stopped waiting on does not sit at "生成中…"
+             forever. Only the changed card is swapped in place. */
+          var statusChanged = !!j.status && w.status !== j.status;
+          if(j.status) w.status = j.status;
+          var ru = j.result_url ? (API_BASE + j.result_url) : "";
+          if(ru && w.resultUrl !== ru) w.resultUrl = ru;
+          if(createdTs && !w.createdTs) w.createdTs = createdTs;
+          if(statusChanged && inWorks) updateWorkCard(w);
+          if(statusChanged && w.status === "ready"){ refreshCredits(true); refreshRealBalance(); }
+          return;
+        }
         var lid = LOCAL_ID[j.template_id];
         var t = templates.filter(function(x){ return x.id === lid; })[0];
         state.works.push({
@@ -1474,14 +1615,15 @@
           kind: t ? t.kind : (j.type === "image" ? "photo" : "video"),
           cover: t ? t.cover : "", photo: null, poster: null,
           resultUrl: j.result_url ? (API_BASE + j.result_url) : "",
-          jobId: j.id, status: j.status,
+          jobId: j.id, status: j.status, createdTs: createdTs,
           time: j.created_at ? j.created_at.slice(5, 16).replace("T", " ") : ""
         });
-        changed = true;
+        added = true;
       });
-      state.works.sort(function(a, b){ return (b.jobId ? 1 : 0) - (a.jobId ? 1 : 0); });
-      if(changed){ syncCredits(); if($("#view-works").classList.contains("on")) renderWorks(); }
-    }).catch(function(){});
+      if(added){ syncCredits(); if(inWorks) renderWorks(); }
+      if(inWorks) updatePendingProgress();
+      syncWorksPolling();
+    }).catch(function(){ syncWorksPolling(); });
   }
 
   /* ---------------- wallet ---------------- */
