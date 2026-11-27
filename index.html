@@ -93,6 +93,14 @@
   .prompt-box{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:16px}
   .prompt-box .pl{font-size:12px;font-weight:800;color:var(--ink3);letter-spacing:.4px;margin-bottom:5px}
   .prompt-box .pt{font-size:13px;color:var(--ink2);line-height:1.6;word-break:break-word}
+  .fullbody-alert{background:#c8102e;color:#fff;border-radius:14px;padding:14px 16px;margin-bottom:14px;
+    display:flex;gap:10px;align-items:flex-start;box-shadow:0 4px 14px rgba(200,16,46,.35)}
+  .fullbody-alert svg{margin-top:3px}
+  .fullbody-alert .fb-title{display:block;font-size:19px;font-weight:800;line-height:1.35}
+  .fullbody-alert .fb-body{display:block;font-size:15px;font-weight:700;line-height:1.55;margin-top:3px}
+  @media (prefers-color-scheme: dark){.fullbody-alert{background:#d61f38}}
+  .card-alert{margin-top:8px;background:#c8102e;color:#fff;font-size:12.5px;font-weight:800;line-height:1.45;
+    padding:6px 9px;border-radius:8px}
 
   /* ---------- template grid ---------- */
   .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
@@ -357,6 +365,14 @@
         <p class="sub" id="detailDesc"></p>
         <div class="kv" id="detailKv"></div>
         <div id="detailPrompt"></div>
+
+        <div class="fullbody-alert" id="fullbodyAlert" style="display:none" role="alert">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.8 2.6 20h18.8z"/><path d="M12 10v4.4"/><circle cx="12" cy="17" r=".6" fill="currentColor" stroke="none"/></svg>
+          <div>
+            <span class="fb-title">视频换人必须用全身照！</span>
+            <span class="fb-body">整个人和衣服都要完整看得清。只露脸的自拍换不上衣服，远景脸还会变回原片的人。</span>
+          </div>
+        </div>
 
         <input type="file" id="photoInput" accept="image/*" hidden />
         <div class="upload-zone" id="uploadZone" role="button" tabindex="0" aria-label="上传我的照片">
@@ -798,7 +814,9 @@
           (photo ? '' : '<div class="play">' + playSvg(20) + '</div>') +
         '</div>' +
         '<div class="card-body"><p class="card-title">' + t.title + '</p>' +
-        '<div class="card-meta"><span class="cat">' + t.cat + '</span><span>' + t.uses + '</span></div></div>';
+        '<div class="card-meta"><span class="cat">' + t.cat + '</span><span>' + t.uses + '</span></div>' +
+        (photo ? '' : '<div class="card-alert">必须用全身照：整个人和衣服都要看得清，自拍换不上</div>') +
+        '</div>';
       card.addEventListener("click", function(){ openDetail(t); });
       grid.appendChild(card);
     });
@@ -834,6 +852,7 @@
     $("#uploadSmall").textContent = photo
       ? "点这里从相册选 · 正面清晰、露脸的照片效果最好"
       : "点这里从相册选 · 全身正面照效果最好";
+    $("#fullbodyAlert").style.display = photo ? "none" : "";
     $("#detailTips").innerHTML = (photo ? [
         "正面露脸、光线亮，脸别太小——合照里脸太小相似度会掉",
         "别戴墨镜：GTA 这类风格会把墨镜一起画进去，摘掉更像你",
